@@ -8,7 +8,9 @@ MIN_SYSTEM_VERSION="15.0"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MACOS_DIR="$ROOT_DIR/macos"
-DIST_DIR="$ROOT_DIR/dist"
+DIST_DIR="${GRAFT_DIST_DIR:-$ROOT_DIR/dist}"
+CONFIGURATION="${GRAFT_BUILD_CONFIGURATION:-debug}"
+APP_VERSION="$(/usr/bin/plutil -extract version raw "$ROOT_DIR/manifest.json")"
 # Assemble away from cloud-managed folders: Finder can attach metadata between
 # copying a nested resource bundle and signing its parent.
 ASSEMBLY_DIR="$(mktemp -d "${TMPDIR:-/tmp}/graft-assembly.XXXXXX")"
@@ -18,6 +20,7 @@ APP_CONTENTS="$APP_BUNDLE/Contents"
 APP_MACOS="$APP_CONTENTS/MacOS"
 APP_HELPERS="$APP_CONTENTS/Helpers"
 APP_RESOURCES="$APP_CONTENTS/Resources"
+APP_FRAMEWORKS="$APP_CONTENTS/Frameworks"
 
 if [[ "$MODE" != "build" && "$MODE" != "--build" ]]; then
   pkill -TERM -x "$APP_NAME" >/dev/null 2>&1 || true
@@ -44,7 +47,7 @@ SDK_VERSION="$(xcrun --show-sdk-version)"
 DEPLOYMENT_TARGET="$MIN_SYSTEM_VERSION"
 LINK_ARGS=(-Xlinker -platform_version -Xlinker macos -Xlinker "$DEPLOYMENT_TARGET" -Xlinker "$SDK_VERSION")
 
-BUILD_ARGS=("${LINK_ARGS[@]}")
+BUILD_ARGS=(-c "$CONFIGURATION" "${LINK_ARGS[@]}" -Xlinker -rpath -Xlinker @executable_path/../Frameworks)
 if [[ "${GRAFT_SWIFT_DISABLE_SANDBOX:-0}" == "1" ]]; then BUILD_ARGS+=(--disable-sandbox); fi
 # SwiftPM also signs its generated resource bundles. Keep those products out
 # of synced checkouts and isolate the caches of different worktrees.
@@ -61,7 +64,9 @@ clear_bundle_finder_info() {
 }
 swift build --package-path "$MACOS_DIR" "${BUILD_ARGS[@]}"
 
-mkdir -p "$APP_MACOS" "$APP_HELPERS" "$APP_RESOURCES"
+SPARKLE_FRAMEWORK="${SWIFTPM_BUILD_DIR}/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework"
+mkdir -p "$APP_MACOS" "$APP_HELPERS" "$APP_RESOURCES" "$APP_FRAMEWORKS"
+/usr/bin/ditto --norsrc "$SPARKLE_FRAMEWORK" "$APP_FRAMEWORKS/Sparkle.framework"
 cp -R "$BIN_DIR/GraftMac_GraftBend.bundle" "$APP_RESOURCES/"
 cp -R "$BIN_DIR/GraftMac_GraftMac.bundle" "$APP_RESOURCES/"
 cp "$MACOS_DIR/BENDABLE-LICENSE" "$MACOS_DIR/BENDABLE-NOTICE.md" "$APP_RESOURCES/"
@@ -84,6 +89,8 @@ cat > "$APP_CONTENTS/Info.plist" <<PLIST
   <key>CFBundleName</key><string>Graft</string>
   <key>CFBundleDisplayName</key><string>Graft</string>
   <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>$APP_VERSION</string>
+  <key>CFBundleVersion</key><string>$APP_VERSION</string>
   <key>CFBundleIconFile</key><string>graft-256.png</string>
   <key>LSMinimumSystemVersion</key><string>$MIN_SYSTEM_VERSION</string>
   <key>NSAppleEventsUsageDescription</key><string>Graft follows the current song and sends playback controls to the music player you connect.</string>
@@ -94,6 +101,17 @@ cat > "$APP_CONTENTS/Info.plist" <<PLIST
   <key>NSPrincipalClass</key><string>NSApplication</string>
 </dict></plist>
 PLIST
+
+if [[ "${GRAFT_ENABLE_UPDATES:-0}" == "1" ]]; then
+  /usr/bin/plutil \
+    -insert SUFeedURL -string 'https://github.com/itsasheruwu/graft/releases/latest/download/appcast.xml' "$APP_CONTENTS/Info.plist"
+  /usr/bin/plutil -insert SUPublicEDKey -string 'mt2l3yQcj5mU6nwwkQz2j0w75g43DTVlOzBQ1mnyH4o=' "$APP_CONTENTS/Info.plist"
+  /usr/bin/plutil -insert SURequireSignedFeed -bool YES "$APP_CONTENTS/Info.plist"
+  /usr/bin/plutil -insert SUSignedFeedFailureExpirationInterval -integer 0 "$APP_CONTENTS/Info.plist"
+  /usr/bin/plutil -insert SUVerifyUpdateBeforeExtraction -bool YES "$APP_CONTENTS/Info.plist"
+  /usr/bin/plutil -insert SUEnableAutomaticChecks -bool YES "$APP_CONTENTS/Info.plist"
+  /usr/bin/plutil -insert SUAutomaticallyUpdate -bool YES "$APP_CONTENTS/Info.plist"
+fi
 
 # SwiftPM signs the standalone executables before this app bundle and its
 # Info.plist exist. Re-sign the assembled bundle so macOS sees the stable bundle

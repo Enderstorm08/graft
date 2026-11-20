@@ -67,7 +67,19 @@ Run these from the repository root. SwiftPM builds the executables as part of th
 
 ## Development status
 
-This is the current development source, not a packaged or notarized release. Native settings writes now use locked transactions, Spotify setup drains output to a temporary file with a timeout, and Keep Awake uses a process-owned power assertion. Foreground notification sound preferences and real-device delivery still need broader integration validation before a stable native release.
+The [GitHub release](https://github.com/itsasheruwu/graft/releases/latest) includes an Apple Silicon build for macOS 15 or later. The app is ad-hoc signed and unnotarized. Foreground notification sound preferences and real-device delivery still need broader integration validation.
+
+## Updates and release packaging
+
+Install `Graft-Mac.zip` from GitHub once to receive future updates. Graft checks for new releases and can install them when it quits. In the Graft menu, use **Check for Updates…** or change **Install Updates Automatically**. Source builds omit the update feed by default.
+
+To package a release, bump the version in `manifest.json`, install the repository's npm dependencies, and run the packaging script on Apple Silicon with the Sparkle 2.10.1 release tools:
+
+```bash
+script/package_release.sh /path/to/Sparkle/bin/sign_update /tmp/graft-release
+```
+
+The script signs the update archive and feed with the `com.itsasheruwu.graft.mac` Sparkle key in the macOS Keychain. Preserve that key for future releases. Upload `Graft-Mac.zip`, `Graft-Chrome.zip`, and `appcast.xml` together on the GitHub release tagged `v<version>`. Publish it as the latest release only after all assets are attached.
 
 ## Settings synchronization
 

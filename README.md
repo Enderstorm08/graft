@@ -17,7 +17,7 @@
   The complete Graft project: Chrome extension, macOS app, native messaging bridge, local AI helper, and website.
 </p>
 
-[Website & interactive preview](https://itsasheruwu.github.io/graft/) · [Browser setup](#install) · [Mac setup](macos/README.md)
+[Website & interactive preview](https://itsasheruwu.github.io/graft/) · [Downloads](https://github.com/itsasheruwu/graft/releases/latest) · [Browser setup](#install) · [Mac setup](macos/README.md)
 
 ## The project
 
@@ -30,7 +30,7 @@
 | Local AI helper | Optional Codex-powered page rewrite recipes | [`tools/`](tools/) |
 | Website | GitHub Pages site and actual browser UI demo | [`website/`](website/) |
 
-Both apps are available from source. There is no Chrome Web Store listing or packaged Mac release yet. The native companion is development software; see its [current limitations](macos/README.md#development-status).
+GitHub Releases provides the Mac app for Apple Silicon and a ZIP for Chrome's **Load unpacked** flow. The Mac app can install future releases automatically. See the [Mac setup notes](macos/README.md) for requirements and source builds.
 
 ## Tweaks
 

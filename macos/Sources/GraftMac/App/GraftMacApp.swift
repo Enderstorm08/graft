@@ -1,8 +1,13 @@
 import AppKit
+import Combine
 import SwiftUI
 import GraftAudio
+import Sparkle
 
 final class GraftAppDelegate: NSObject, NSApplicationDelegate {
+    let updater: SPUStandardUpdaterController? = Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") != nil
+        ? SPUStandardUpdaterController(startingUpdater: false, updaterDelegate: nil, userDriverDelegate: nil)
+        : nil
     var audio: GraftAudioService?
     var keepAwake: KeepAwakeService?
     var closedLid: ClosedLidSessionService?
@@ -31,6 +36,7 @@ final class GraftAppDelegate: NSObject, NSApplicationDelegate {
         source.resume()
         terminationSource = source
         musicScene?.start()
+        updater?.startUpdater()
         NSApp.setActivationPolicy(.regular)
         NSApp.activate()
     }
@@ -69,6 +75,11 @@ struct GraftMacApp: App {
         .defaultSize(width: 900, height: 650)
         .windowToolbarStyle(.unified)
         .commands {
+            CommandGroup(after: .appInfo) {
+                if let updater = appDelegate.updater {
+                    GraftUpdateMenu(updater: updater)
+                }
+            }
             CommandGroup(replacing: .sidebar) {}
             CommandGroup(after: .windowArrangement) {
                 Button("Open Music Scene") { store.musicScene.openPlayer() }
@@ -80,5 +91,24 @@ struct GraftMacApp: App {
         MenuBarExtra("Graft", systemImage: "leaf.fill") {
             MenuBarView().environment(store)
         }.menuBarExtraStyle(.window)
+    }
+}
+
+private struct GraftUpdateMenu: View {
+    let updater: SPUStandardUpdaterController
+    @State private var canCheck = false
+    @State private var automaticallyInstall = false
+
+    var body: some View {
+        Button("Check for Updates…") { updater.checkForUpdates(nil) }
+            .disabled(!canCheck)
+            .onReceive(updater.updater.publisher(for: \.canCheckForUpdates)) { canCheck = $0 }
+        Toggle("Install Updates Automatically", isOn: Binding(
+            get: { automaticallyInstall },
+            set: { updater.updater.automaticallyDownloadsUpdates = $0 }
+        ))
+        .onReceive(updater.updater.publisher(for: \.automaticallyDownloadsUpdates)) {
+            automaticallyInstall = $0
+        }
     }
 }
