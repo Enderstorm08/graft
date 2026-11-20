@@ -75,6 +75,7 @@ cp "$BIN_DIR/GraftNativeHost" "$APP_HELPERS/GraftNativeHost"
 cp "$ROOT_DIR/src/assets/icons/graft-256.png" "$APP_RESOURCES/graft-256.png"
 cp "$ROOT_DIR/macos/Resources/graft-spotify-bridge.js" "$APP_RESOURCES/graft-spotify-bridge.js"
 mkdir -p "$APP_RESOURCES/Licenses"
+cp "$SWIFTPM_BUILD_DIR/checkouts/Sparkle/LICENSE" "$APP_RESOURCES/Licenses/SPARKLE-LICENSE"
 for notice in CODEXBAR-LICENSE CODEXBAR-NOTICE.md LICENSE GRAFT-MIT-LICENSE FINETUNE-LICENSE FINETUNE-NOTICE.md FINETUNE-SOURCE.json BENDABLE-LICENSE BENDABLE-NOTICE.md YAMS-LICENSE LIBYAML-LICENSE; do
   cp "$MACOS_DIR/$notice" "$APP_RESOURCES/Licenses/$notice"
 done
