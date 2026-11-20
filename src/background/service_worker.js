@@ -27,6 +27,7 @@ const SYNC_DEFAULT_SETTINGS = {
   wikipediaFloatingTocEnabled: false,
   wikipediaSearchHighlightEnabled: false,
   wikipediaHideDonationBannersEnabled: false,
+  slopalyticsGlassEnabled: false,
   xQuietFeedEnabled: false,
   robloxPlayerWatcherEnabled: false,
   robloxPlayerWatcherNotifyOnline: true,

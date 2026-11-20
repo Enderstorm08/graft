@@ -7,7 +7,7 @@ The native part of the Graft project: a SwiftUI app, menu bar companion, shared 
 - macOS 15 or later
 - Xcode 26 or later with Swift 6.2
 - The Graft Chrome extension for browser page tweaks and settings synchronization
-- Spotify desktop and Spicetify only if you enable the optional Spotify integration
+- Spotify desktop and Spicetify for Spotify Friend Watcher
 
 ## Build and run
 
@@ -33,9 +33,11 @@ The bridge exchanges Graft settings. It does not read browsing history or page c
 ## Features
 
 - Web tweak settings in a native window and menu bar
+- **Music Scene** (Mac Tweaks → Music, or ⇧⌘M) follows playback in the Spotify and Apple Music desktop apps. Click the sleeve or press A to expand the artwork while keeping playback controls in reach. Escape collapses it. Graft retries delayed player artwork. For Apple Music streams missing a cover, it checks the recording against Apple’s catalog. Expanding a low-resolution Apple Music sleeve looks up the artist and album and uses a larger cover when the images match. Lyrics appear in conversation bubbles with backing-vocal replies, macOS emoji Tapbacks and offline street maps. Slow Silver 03 tags lift and place the group sticker on the lyric in any song. The kurtains recording of “trees” also uses syllable reveals, echo and ink effects, and a Twitter.com link preview. Word effects follow syllable timing, held notes, repeats and punctuation. Line-synced lyrics use estimated word pacing. Plain lyrics display an Estimated timing label. The edge light follows the player window until you switch on **Desktop edge light**, which moves it to the selected display. Options include an artwork companion window, a silent preview, a volume-reactive glow and a separate **Sync light to the beat** switch that follows percussion in the system audio. With **Animate light** on, the album-colored glow travels clockwise. Beat sync follows the song’s tempo, gently advances the highlight on percussion, and pulses the glow. Live playback uses macOS Automation. The optional pulse reads the system audio mix locally. Lyrics mode looks up track metadata on [LRCLIB](https://lrclib.net/docs) and also accepts a timed .lrc or plain .txt file through the player’s More menu.
 - Auto-install DMGs (Mac Tweaks → Applications): while enabled and Graft is running, opening a read-only DMG copies its top-level apps into `/Applications`, then ejects it. The nested **Delete DMG after installation** option moves the source to Trash only after every app is copied and the image ejects. Both options default off. Writable image-building volumes are ignored. Existing apps, package installers, multi-volume images, and invalid bundles require manual installation; failures keep the source. Graft preserves quarantine and does not launch installed apps or bypass macOS security checks. Disabling stops new installs; a copy already in progress finishes.
 - Auto-use Codex banked rate limit resets about five minutes before expiry, using the existing Codex sign-in (Mac Tweaks → Applications). Off by default; Graft must be running and the Mac awake. Checks on wake, retries temporary failures with the same redemption request ID, and keeps a local attempt ledger across restarts. Open Codex or run `codex login` if sign-in expires.
-- Keep Mac awake and float the Graft window
+- **Dock AI Usage** (Mac Tweaks → Applications) puts a usage meter on ChatGPT/Codex, Claude, and Cursor in the Dock. Hover over an icon for its reset countdown. Enable the tweak and allow Accessibility so Graft can follow the icons. ChatGPT/Codex uses your Codex sign-in. For Claude and Cursor, set up those usage providers in [CodexBar](https://github.com/steipete/CodexBar). Keep Graft running and pin or open the apps you want to see.
+- Caffeinate for idle keep-awake sessions, Insomnia for timed closed-lid sessions, and a floating Graft window
 - Show hidden Finder files or hide desktop icons, with a confirmation before restarting Finder
 - Roblox presence notifications, coordinated with the browser fallback
 - Optional Spotify friend activity notifications and local listening history through Spicetify
@@ -58,9 +60,10 @@ Spotify setup is opt-in and changes the local Spotify customization. Its control
 ```bash
 swift test --package-path macos
 node --test macos/Tests/SpotifyBridgeResourceTests.mjs
+python3 macos/Tests/ClosedLidPowerScriptTests.py
 ```
 
-Run these from the repository root. SwiftPM builds the executables as part of the test build. These checks do not verify real notification delivery, Spotify setup, or live Chrome/native synchronization.
+Run these from the repository root. SwiftPM builds the executables as part of the test build. The closed-lid tests require Python 3.11 or later and use simulated power and recovery commands. These checks do not verify a physical lid close, real notification delivery, Spotify setup, or live Chrome/native synchronization.
 
 ## Development status
 
@@ -72,17 +75,32 @@ The Mac app and native host mutate only the fields they own inside a read/modify
 
 Browser changes from the Mac carry per-key acknowledgement tokens and revision numbers. The extension serializes storage reads/writes, acknowledges the exact completed write, then reports the current browser state. Stale snapshots and acknowledgements cannot overwrite a newer queued toggle. Pending changes retry across reconnects and app restarts. Rebuild the extension with `npm run build` and reload it in Chrome when updating this protocol; restart the old native host processes so every writer uses the transaction API.
 
-## Timed Keep Awake
+## Caffeinate and Insomnia
 
-Expand **Keep Mac awake → Session** in Mac Tweaks to choose Until turned off, 30 minutes, 2 hours, or Until an app quits. App-bound sessions select a running application and track that process and launch time. Timed sessions store an absolute deadline, so unrelated settings changes and app restarts do not reset the timer. Changing the duration while active starts a new duration.
+**Mac Tweaks → System** has separate collapsed rows for **Caffeinate** and **Insomnia**. Each has its own switch and session. Both are also available from the menu bar.
 
-Keep Awake uses an IOKit power assertion owned by the Graft process. Normal quit releases it explicitly; process death also releases it, including force quit. It prevents idle display/system sleep, without changing persistent system power preferences. Closed-lid and explicit user-requested sleep remain system-controlled.
+Caffeinate prevents idle sleep while Graft runs. Choose a duration, keep it on until stopped, or select a running app such as Codex. Enable **Keep the screen on** for tasks such as Codex Computer Use that need an unlocked desktop. **Add 30 min** extends an active timer. Existing Stay Awake preferences carry over to Caffeinate.
+
+Insomnia keeps an Apple Silicon MacBook awake with the lid closed on macOS 26 or later. Expand its row to choose 1–240 minutes, then turn on its switch and approve the macOS administrator prompt. It works on battery or while charging and ends at 10% charge. Use a ventilated surface.
+
+Insomnia has its own recovery job, which restores the sleep setting when its timer ends, Graft exits, or the Mac reboots. If the lid is still closed at expiry and no external display is online, Graft asks macOS to sleep. Insomnia was inspired by [Insomnia](https://github.com/krishhgg/Insomnia).
+
+Codex and local scripts can control Caffeinate while Graft is open. Durations are in minutes.
+
+```bash
+dist/Graft.app/Contents/MacOS/Graft --caffeinate start 60
+dist/Graft.app/Contents/MacOS/Graft --caffeinate extend 30
+dist/Graft.app/Contents/MacOS/Graft --caffeinate status
+dist/Graft.app/Contents/MacOS/Graft --caffeinate end
+```
+
+The existing `--stay-awake` flag remains an alias for Caffeinate commands.
 
 ## Activity and troubleshooting
 
-**Activity** in the sidebar and menu bar shows local install results, watcher checks, settings connectivity/acknowledgements, Keep Awake sessions, Spotify repairs, and failures. The latest 200 events persist in `~/Library/Application Support/Graft/activity.json`; repeated identical watcher checks share one row. Search, category filtering, and Only problems narrow the history.
+**Activity** in the sidebar and menu bar shows local install results, watcher checks, settings connectivity/acknowledgements, Caffeinate sessions, Spotify repairs, and failures. The latest 200 events persist in `~/Library/Application Support/Graft/activity.json`; repeated identical watcher checks share one row. Search, category filtering, and Only problems narrow the history.
 
-Retry actions repeat the operation represented by the entry: retry an install from its original DMG, finish cleanup without reinstalling apps, check a watcher, repair Spotify, retry settings sync, or retry Keep Awake. They do not enable disabled watchers or grant permissions. Spotify repair success means the repair was applied; a fresh heartbeat separately confirms reconnection. History starts when this version is first run; older operations are not reconstructed.
+Retry actions repeat the operation represented by the entry: retry an install from its original DMG, finish cleanup without reinstalling apps, check a watcher, repair Spotify, retry settings sync, or retry Caffeinate. They do not enable disabled watchers or grant permissions. Spotify repair success means the repair was applied; a fresh heartbeat separately confirms reconnection. History starts when this version is first run; older operations are not reconstructed.
 
 ## Appearance and startup
 

@@ -8,9 +8,9 @@ struct ActivityView: View {
 
     private var filtered: [GraftActivityEntry] {
         store.activity.entries.filter {
-            (category == "All" || $0.category.rawValue == category)
+            (category == "All" || $0.category.title == category)
                 && (!failuresOnly || $0.level == .failure || $0.level == .warning)
-                && (search.isEmpty || "\($0.title) \($0.detail) \($0.category.rawValue)".localizedCaseInsensitiveContains(search))
+                && (search.isEmpty || "\($0.title) \($0.detail) \($0.category.title)".localizedCaseInsensitiveContains(search))
         }
     }
 
@@ -48,7 +48,7 @@ struct ActivityView: View {
                 GraftRow { GraftHistorySearchField(text: $search, prompt: "Search activity") }
                 GraftPickerRow(title: "Category", selection: $category) {
                     Text("All").tag("All")
-                    ForEach(ActivityCategory.allCases, id: \.self) { Text($0.rawValue).tag($0.rawValue) }
+                    ForEach(ActivityCategory.allCases, id: \.self) { Text($0.title).tag($0.title) }
                 }
                 GraftToggleRow(title: "Only problems", isOn: $failuresOnly)
                 if filtered.isEmpty {
@@ -61,7 +61,7 @@ struct ActivityView: View {
                             Text(entry.title).font(.callout.weight(.medium))
                             Text(entry.detail).font(.caption).foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
-                            Text("\(entry.category.rawValue) · \(entry.date.formatted(date: .abbreviated, time: .shortened))\(entry.occurrences > 1 ? " · \(entry.occurrences) checks" : "")")
+                            Text("\(entry.category.title) · \(entry.date.formatted(date: .abbreviated, time: .shortened))\(entry.occurrences > 1 ? " · \(entry.occurrences) checks" : "")")
                                 .font(.caption2).foregroundStyle(.tertiary)
                         }
                         Spacer(minLength: 6)

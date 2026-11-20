@@ -5,16 +5,24 @@ import Observation
 
 @Observable
 final class KeepAwakeService: NSObject {
-    private(set) var isActive = false
+    static let codexBundleID = "com.openai.codex"
+
+    private struct PowerAssertion {
+        let id: IOPMAssertionID
+        let keepsDisplayAwake: Bool
+    }
+
+    var isActive: Bool { assertion != nil }
     private(set) var detail = "Off"
     var onStopped: ((String, Bool) -> Void)?
     private var settings = MacSettings()
-    private var assertion: IOPMAssertionID?
+    private var assertion: PowerAssertion?
     @ObservationIgnored private var monitor: Task<Void, Never>?
     @ObservationIgnored private let now: () -> Date
     @ObservationIgnored private let targetIsRunning: (MacSettings) -> Bool
-    @ObservationIgnored private let createAssertion: () throws -> IOPMAssertionID
+    @ObservationIgnored private let createAssertion: (Bool) throws -> IOPMAssertionID
     @ObservationIgnored private let releaseAssertion: (IOPMAssertionID) -> Void
+    @ObservationIgnored private let automaticallyMonitor: Bool
 
     init(
         now: @escaping () -> Date = Date.init,
@@ -28,14 +36,17 @@ final class KeepAwakeService: NSObject {
             }
             return true
         },
-        createAssertion: @escaping () throws -> IOPMAssertionID = {
+        createAssertion: @escaping (Bool) throws -> IOPMAssertionID = { keepDisplayAwake in
+            // Holding the display awake also prevents idle system sleep.
+            let type = keepDisplayAwake
+                ? kIOPMAssertionTypePreventUserIdleDisplaySleep
+                : kIOPMAssertionTypePreventUserIdleSystemSleep
             var id: IOPMAssertionID = 0
             let result = IOPMAssertionCreateWithName(
-                kIOPMAssertionTypePreventUserIdleDisplaySleep as CFString,
-                IOPMAssertionLevel(kIOPMAssertionLevelOn), "Graft Keep Awake" as CFString, &id
+                type as CFString, IOPMAssertionLevel(kIOPMAssertionLevelOn), "Graft Caffeinate" as CFString, &id
             )
             guard result == kIOReturnSuccess else {
-                throw NSError(domain: "Graft.KeepAwake", code: Int(result), userInfo: [NSLocalizedDescriptionKey: "macOS could not start Keep Awake (\(result))."])
+                throw NSError(domain: "Graft.KeepAwake", code: Int(result), userInfo: [NSLocalizedDescriptionKey: "macOS could not start Caffeinate (\(result))."])
             }
             return id
         },
@@ -46,41 +57,60 @@ final class KeepAwakeService: NSObject {
         self.targetIsRunning = targetIsRunning
         self.createAssertion = createAssertion
         self.releaseAssertion = releaseAssertion
+        self.automaticallyMonitor = automaticallyMonitor
         super.init()
         if automaticallyMonitor {
             NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(appTerminated(_:)), name: NSWorkspace.didTerminateApplicationNotification, object: nil)
-            monitor = Task { [weak self] in
-                while !Task.isCancelled {
-                    try? await Task.sleep(for: .seconds(1))
-                    guard !Task.isCancelled else { return }
-                    self?.checkNow()
-                }
-            }
         }
     }
 
     isolated deinit {
         monitor?.cancel()
         NSWorkspace.shared.notificationCenter.removeObserver(self)
-        if let assertion { releaseAssertion(assertion) }
+        if let assertion { releaseAssertion(assertion.id) }
     }
 
     func apply(_ settings: MacSettings) {
+        let wasEnabled = self.settings.keepAwake
         self.settings = settings
-        guard settings.keepAwake else { release(); detail = "Off"; return }
-        if let reason = stopReason() { stop(reason); return }
-        if assertion == nil {
-            do { assertion = try createAssertion(); isActive = true }
-            catch { stop(error.localizedDescription, failed: true); return }
+        guard settings.keepAwake else {
+            release()
+            if wasEnabled { detail = "Off" }
+            return
+        }
+        if let reason = stopReason() {
+            stop(reason)
+            return
+        }
+        if assertion?.keepsDisplayAwake != settings.keepAwakeDisplay {
+            do {
+                let id = try createAssertion(settings.keepAwakeDisplay)
+                // Acquire the replacement before releasing the active assertion.
+                if let assertion { releaseAssertion(assertion.id) }
+                assertion = PowerAssertion(id: id, keepsDisplayAwake: settings.keepAwakeDisplay)
+            } catch {
+                stop(error.localizedDescription, failed: true)
+                return
+            }
         }
         switch settings.keepAwakeMode {
-        case .untilTurnedOff: detail = "Active until turned off or Graft exits"
-        case .thirtyMinutes, .twoHours:
-            detail = "Active until \(settings.keepAwakeDeadline?.formatted(date: .omitted, time: .shortened) ?? "timer ends")"
+        case .untilTurnedOff: detail = "Awake until stopped"
+        case .thirtyMinutes, .oneHour, .twoHours, .fourHours, .custom:
+            let endTime = settings.keepAwakeDeadline?.formatted(date: .omitted, time: .shortened) ?? "the timer ends"
+            detail = "Awake until \(endTime)"
         case .untilAppQuits:
-            let name = settings.keepAwakeAppPID.flatMap { NSRunningApplication(processIdentifier: $0)?.localizedName } ?? settings.keepAwakeAppBundleID
-            detail = "Active until \(name) quits or Graft exits"
+            let app = settings.keepAwakeAppPID.flatMap { NSRunningApplication(processIdentifier: $0) }
+            let name = app.map(Self.targetName(for:)) ?? settings.keepAwakeAppBundleID
+            detail = "Awake until \(name) quits"
         }
+        updateMonitor()
+    }
+
+    static func targetName(for app: NSRunningApplication) -> String {
+        if app.bundleIdentifier == codexBundleID {
+            return app.localizedName == "ChatGPT" ? "Codex (ChatGPT)" : "Codex"
+        }
+        return app.localizedName ?? app.bundleIdentifier ?? "Application"
     }
 
     func checkNow() {
@@ -89,7 +119,6 @@ final class KeepAwakeService: NSObject {
     }
 
     func shutdown() {
-        monitor?.cancel()
         release()
         settings.keepAwake = false
         detail = "Off"
@@ -99,9 +128,9 @@ final class KeepAwakeService: NSObject {
 
     private func stopReason() -> String? {
         switch settings.keepAwakeMode {
-        case .thirtyMinutes, .twoHours:
-            guard let deadline = settings.keepAwakeDeadline else { return "Choose a duration and start Keep Awake again." }
-            return now() >= deadline ? "Keep Awake timer finished." : nil
+        case .thirtyMinutes, .oneHour, .twoHours, .fourHours, .custom:
+            guard let deadline = settings.keepAwakeDeadline else { return "Choose a duration and start Caffeinate again." }
+            return now() >= deadline ? "Caffeinate timer finished." : nil
         case .untilAppQuits:
             return targetIsRunning(settings) ? nil : "The chosen app is no longer running."
         case .untilTurnedOff: return nil
@@ -115,8 +144,29 @@ final class KeepAwakeService: NSObject {
         onStopped?(message, failed)
     }
 
+    private func updateMonitor() {
+        guard automaticallyMonitor else { return }
+        guard settings.keepAwakeMode != .untilTurnedOff else {
+            monitor?.cancel()
+            monitor = nil
+            return
+        }
+        guard monitor == nil else { return }
+        monitor = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                guard !Task.isCancelled else { return }
+                self?.checkNow()
+            }
+        }
+    }
+
     private func release() {
-        if let assertion { releaseAssertion(assertion); self.assertion = nil }
-        isActive = false
+        monitor?.cancel()
+        monitor = nil
+        if let assertion {
+            releaseAssertion(assertion.id)
+            self.assertion = nil
+        }
     }
 }

@@ -1,3 +1,4 @@
+import { SlopalyticsGlassSettings } from "@/components/tweaks/slopalytics-glass-settings";
 import type { ComponentType } from "react";
 
 import { AssetFinderSettings } from "@/components/tweaks/asset-finder-settings";
@@ -48,6 +49,11 @@ export type TweakCatalogEntry = {
 };
 
 export const TWEAK_CATALOG: TweakCatalogEntry[] = [
+  {
+    id: "slopalytics-glass", name: "Slopalytics Glass", category: "appearance", badgeKey: "slopalyticsGlass",
+    taglines: { popup: "A glass finish for Slopalytics", options: "Frosted panels for Slopalytics benchmarks and usage" },
+    Settings: SlopalyticsGlassSettings,
+  },
   {
     id: "force-dark-mode",
     name: "Force Dark Mode",

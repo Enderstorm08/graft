@@ -5,8 +5,19 @@ import GraftAudio
 final class GraftAppDelegate: NSObject, NSApplicationDelegate {
     var audio: GraftAudioService?
     var keepAwake: KeepAwakeService?
+    var closedLid: ClosedLidSessionService?
+    var stayAwakeCommands: StayAwakeCommandServer?
+    var musicScene: MusicSceneWindows?
+    var dockAIUsage: DockAIUsageService?
     private var terminationSource: DispatchSourceSignal?
-    func applicationWillTerminate(_ notification: Notification) { keepAwake?.shutdown(); audio?.shutdown() }
+    func applicationWillTerminate(_ notification: Notification) {
+        musicScene?.stop()
+        stayAwakeCommands?.stop()
+        dockAIUsage?.stop()
+        closedLid?.stop()
+        keepAwake?.shutdown()
+        audio?.shutdown()
+    }
     func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls { audio?.handleURL(url) }
     }
@@ -19,6 +30,7 @@ final class GraftAppDelegate: NSObject, NSApplicationDelegate {
         source.setEventHandler { NSApplication.shared.terminate(nil) }
         source.resume()
         terminationSource = source
+        musicScene?.start()
         NSApp.setActivationPolicy(.regular)
         NSApp.activate()
     }
@@ -30,10 +42,17 @@ struct GraftMacApp: App {
     @State private var store: GraftStore
 
     init() {
+        StayAwakeCommand.runIfRequested()
         let store = GraftStore()
         _store = State(initialValue: store)
+        _appDelegate.wrappedValue.musicScene = store.musicScene
         _appDelegate.wrappedValue.audio = store.audio
         _appDelegate.wrappedValue.keepAwake = store.keepAwake
+        _appDelegate.wrappedValue.closedLid = store.closedLid
+        _appDelegate.wrappedValue.dockAIUsage = store.dockAIUsage
+        _appDelegate.wrappedValue.stayAwakeCommands = StayAwakeCommandServer(handler: { [weak store] command in
+            store?.handleStayAwakeCommand(command) ?? .init(success: false, message: "Graft is closing.")
+        })
     }
 
     var body: some Scene {
@@ -51,6 +70,11 @@ struct GraftMacApp: App {
         .windowToolbarStyle(.unified)
         .commands {
             CommandGroup(replacing: .sidebar) {}
+            CommandGroup(after: .windowArrangement) {
+                Button("Open Music Scene") { store.musicScene.openPlayer() }
+                    .keyboardShortcut("m", modifiers: [.command, .shift])
+                Button("Open Music Scene Artwork") { store.musicScene.openArtwork() }
+            }
         }
 
         MenuBarExtra("Graft", systemImage: "leaf.fill") {

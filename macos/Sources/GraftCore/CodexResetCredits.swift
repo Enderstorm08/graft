@@ -143,7 +143,7 @@ public struct CodexResetAPI: Sendable {
     }) { self.transport = transport }
 
     public func inventory(_ credentials: CodexResetCredentials) async throws -> CodexResetInventory {
-        let (data, status) = try await transport(request(credentials, consume: false))
+        let (data, status) = try await transport(Self.accountRequest(credentials, path: "rate-limit-reset-credits"))
         try validate(status)
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .custom { decoder in
@@ -163,7 +163,9 @@ public struct CodexResetAPI: Sendable {
     }
 
     public func consume(_ creditID: String, requestID: String, credentials: CodexResetCredentials) async throws -> String {
-        var request = request(credentials, consume: true)
+        var request = Self.accountRequest(credentials, path: "rate-limit-reset-credits/consume")
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(["credit_id": creditID, "redeem_request_id": requestID])
         let (data, status) = try await transport(request)
         if status == 401 || status == 403 { throw CodexResetError.signInRequired }
@@ -174,18 +176,16 @@ public struct CodexResetAPI: Sendable {
         return code
     }
 
-    private func request(_ credentials: CodexResetCredentials, consume: Bool) -> URLRequest {
+    static func accountRequest(_ credentials: CodexResetCredentials, path: String) -> URLRequest {
         // Fixed official endpoint: never send Codex credentials to a configurable proxy.
-        let suffix = consume ? "/consume" : ""
-        var request = URLRequest(url: URL(string: "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits\(suffix)")!, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 15)
-        request.httpMethod = consume ? "POST" : "GET"
+        let url = URL(string: "https://chatgpt.com/backend-api/wham")!.appendingPathComponent(path)
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 15)
         request.setValue("Bearer \(credentials.accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue(credentials.accountID, forHTTPHeaderField: "ChatGPT-Account-ID")
         request.setValue("Graft", forHTTPHeaderField: "User-Agent")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("codex-1", forHTTPHeaderField: "OpenAI-Beta")
         request.setValue("Codex Desktop", forHTTPHeaderField: "originator")
-        if consume { request.setValue("application/json", forHTTPHeaderField: "Content-Type") }
         return request
     }
 

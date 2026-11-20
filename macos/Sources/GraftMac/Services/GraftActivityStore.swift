@@ -4,6 +4,8 @@ import Observation
 
 nonisolated enum ActivityCategory: String, Codable, CaseIterable, Sendable {
     case installs = "Installs", watchers = "Watchers", spotify = "Spotify", settings = "Settings", keepAwake = "Keep Awake"
+
+    var title: String { self == .keepAwake ? "Caffeinate" : rawValue }
 }
 
 nonisolated enum ActivityLevel: String, Codable, Sendable {
@@ -22,7 +24,7 @@ nonisolated enum ActivityRetry: Codable, Equatable, Sendable {
         case .checkRoblox, .checkSpotify: "Check Now"
         case .repairSpotify: "Retry Repair"
         case .syncSettings: "Retry Sync"
-        case .keepAwake: "Retry Keep Awake"
+        case .keepAwake: "Retry Caffeinate"
         }
     }
 }

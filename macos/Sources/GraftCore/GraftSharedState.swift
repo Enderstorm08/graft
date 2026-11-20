@@ -36,13 +36,16 @@ public enum JSONValue: Codable, Equatable, Sendable {
 }
 
 public enum KeepAwakeMode: String, Codable, CaseIterable, Sendable {
-    case untilTurnedOff, thirtyMinutes, twoHours, untilAppQuits
+    case thirtyMinutes, oneHour, twoHours, fourHours, custom, untilTurnedOff, untilAppQuits
 
     public var title: String {
         switch self {
         case .untilTurnedOff: "Until turned off"
         case .thirtyMinutes: "30 minutes"
+        case .oneHour: "1 hour"
         case .twoHours: "2 hours"
+        case .fourHours: "4 hours"
+        case .custom: "Custom"
         case .untilAppQuits: "Until an app quits"
         }
     }
@@ -50,15 +53,22 @@ public enum KeepAwakeMode: String, Codable, CaseIterable, Sendable {
     public var duration: TimeInterval? {
         switch self {
         case .thirtyMinutes: 30 * 60
+        case .oneHour: 60 * 60
         case .twoHours: 2 * 60 * 60
-        default: nil
+        case .fourHours: 4 * 60 * 60
+        case .custom, .untilTurnedOff, .untilAppQuits: nil
         }
     }
 }
 
 public struct MacSettings: Codable, Equatable, Sendable {
+    public static let keepAwakeCustomMinuteRange = 1...240
+
+    public var insomniaMinutes = 60
     public var keepAwake = false
-    public var keepAwakeMode: KeepAwakeMode = .untilTurnedOff
+    public var keepAwakeMode: KeepAwakeMode = .oneHour
+    public var keepAwakeDisplay = false
+    public var keepAwakeCustomMinutes = 60
     public var keepAwakeDeadline: Date?
     public var keepAwakeAppBundleID = ""
     public var keepAwakeAppPID: Int32?
@@ -69,6 +79,10 @@ public struct MacSettings: Codable, Equatable, Sendable {
     public var robloxWatcherTimeSensitive = false
     public var robloxWatcherNotificationSoundEnabled = true
     public var codexAutoUseResetsEnabled = false
+    public var dockAIUsageEnabled = false
+    public var dockAIUsageCodex = true
+    public var dockAIUsageClaude = true
+    public var dockAIUsageCursor = true
     public var dmgAutoInstallEnabled = false
     public var dmgAutoInstallTrashAfterSuccess = false
     public var spotifyWatcherEnabled = false
@@ -79,10 +93,18 @@ public struct MacSettings: Codable, Equatable, Sendable {
     public var spotifyWatcherNotificationSoundEnabled = true
     public var spotifyWatcherWhitelist: [String] = []
 
+    public var keepAwakeDuration: TimeInterval? {
+        guard keepAwakeMode == .custom else { return keepAwakeMode.duration }
+        let range = Self.keepAwakeCustomMinuteRange
+        let minutes = min(max(keepAwakeCustomMinutes, range.lowerBound), range.upperBound)
+        return TimeInterval(minutes * 60)
+    }
+
     public init() {}
 
     private enum CodingKeys: String, CodingKey {
-        case keepAwake
+        case insomniaMinutes
+        case keepAwake, keepAwakeDisplay, keepAwakeCustomMinutes
         case keepAwakeMode, keepAwakeDeadline, keepAwakeAppBundleID, keepAwakeAppPID, keepAwakeAppLaunchDate
         case floatGraftWindow
         case showHiddenFinderFiles
@@ -90,6 +112,7 @@ public struct MacSettings: Codable, Equatable, Sendable {
         case robloxWatcherTimeSensitive
         case robloxWatcherNotificationSoundEnabled
         case codexAutoUseResetsEnabled
+        case dockAIUsageEnabled, dockAIUsageCodex, dockAIUsageClaude, dockAIUsageCursor
         case dmgAutoInstallEnabled
         case dmgAutoInstallTrashAfterSuccess
         case spotifyWatcherEnabled
@@ -104,8 +127,14 @@ public struct MacSettings: Codable, Equatable, Sendable {
     public init(from decoder: Decoder) throws {
         self.init()
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        insomniaMinutes = try container.decodeIfPresent(Int.self, forKey: .insomniaMinutes) ?? 60
         keepAwake = try container.decodeIfPresent(Bool.self, forKey: .keepAwake) ?? false
-        keepAwakeMode = try container.decodeIfPresent(KeepAwakeMode.self, forKey: .keepAwakeMode) ?? .untilTurnedOff
+        keepAwakeMode = try container.decodeIfPresent(KeepAwakeMode.self, forKey: .keepAwakeMode)
+            ?? (keepAwake ? .untilTurnedOff : keepAwakeMode)
+        // An active session from an older version already promised to keep the display awake.
+        keepAwakeDisplay = try container.decodeIfPresent(Bool.self, forKey: .keepAwakeDisplay) ?? keepAwake
+        keepAwakeCustomMinutes = try container.decodeIfPresent(Int.self, forKey: .keepAwakeCustomMinutes)
+            ?? keepAwakeCustomMinutes
         keepAwakeDeadline = try container.decodeIfPresent(Date.self, forKey: .keepAwakeDeadline)
         keepAwakeAppBundleID = try container.decodeIfPresent(String.self, forKey: .keepAwakeAppBundleID) ?? ""
         keepAwakeAppPID = try container.decodeIfPresent(Int32.self, forKey: .keepAwakeAppPID)
@@ -122,6 +151,10 @@ public struct MacSettings: Codable, Equatable, Sendable {
             forKey: .robloxWatcherNotificationSoundEnabled
         ) ?? true
         codexAutoUseResetsEnabled = try container.decodeIfPresent(Bool.self, forKey: .codexAutoUseResetsEnabled) ?? false
+        dockAIUsageEnabled = try container.decodeIfPresent(Bool.self, forKey: .dockAIUsageEnabled) ?? false
+        dockAIUsageCodex = try container.decodeIfPresent(Bool.self, forKey: .dockAIUsageCodex) ?? true
+        dockAIUsageClaude = try container.decodeIfPresent(Bool.self, forKey: .dockAIUsageClaude) ?? true
+        dockAIUsageCursor = try container.decodeIfPresent(Bool.self, forKey: .dockAIUsageCursor) ?? true
         dmgAutoInstallEnabled = try container.decodeIfPresent(Bool.self, forKey: .dmgAutoInstallEnabled) ?? false
         dmgAutoInstallTrashAfterSuccess = try container.decodeIfPresent(Bool.self, forKey: .dmgAutoInstallTrashAfterSuccess) ?? false
         spotifyWatcherEnabled = try container.decodeIfPresent(

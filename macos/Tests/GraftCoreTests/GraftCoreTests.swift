@@ -82,6 +82,8 @@ struct GraftSharedStateTests {
         let data = Data(#"{"keepAwake":true,"floatGraftWindow":false,"showHiddenFinderFiles":false,"hideDesktopIcons":false}"#.utf8)
         let settings = try JSONDecoder().decode(MacSettings.self, from: data)
         #expect(settings.keepAwake)
+        #expect(settings.keepAwakeMode == .untilTurnedOff)
+        #expect(settings.keepAwakeDisplay)
         #expect(!settings.robloxWatcherTimeSensitive)
         #expect(settings.robloxWatcherNotificationSoundEnabled)
         #expect(!settings.spotifyWatcherEnabled)
@@ -91,6 +93,25 @@ struct GraftSharedStateTests {
         #expect(!settings.spotifyWatcherTimeSensitive)
         #expect(settings.spotifyWatcherNotificationSoundEnabled)
         #expect(settings.spotifyWatcherWhitelist.isEmpty)
+    }
+
+    @Test("Stay Awake keeps its display preference and custom duration after reloading")
+    func stayAwakeSettingsRoundTrip() throws {
+        let defaults = try JSONDecoder().decode(MacSettings.self, from: Data("{}".utf8))
+        #expect(defaults.keepAwakeMode == .oneHour)
+        #expect(!defaults.keepAwakeDisplay)
+        var settings = defaults
+        settings.keepAwakeMode = .custom
+        settings.keepAwakeDisplay = true
+        settings.keepAwakeCustomMinutes = 75
+        let decoded = try JSONDecoder().decode(MacSettings.self, from: JSONEncoder().encode(settings))
+        #expect(decoded == settings)
+        #expect(decoded.keepAwakeDuration == TimeInterval(75 * 60))
+
+        settings.keepAwakeCustomMinutes = .max
+        #expect(settings.keepAwakeDuration == TimeInterval(240 * 60))
+        settings.keepAwakeCustomMinutes = .min
+        #expect(settings.keepAwakeDuration == 60)
     }
 
     // Documents current behaviour rather than endorsing it: the synthesized Decodable
@@ -127,5 +148,29 @@ struct GraftCompanionPresenceTests {
             updatedAt: now.addingTimeInterval(-9),
             canDeliverNotifications: true
         ).isFresh(at: now))
+    }
+}
+
+@Suite("Independent Mac awake tweaks")
+struct IndependentAwakeSettingsTests {
+    @Test func legacySettingsDefaultInsomniaDuration() throws {
+        let data = Data(#"{"keepAwake":true,"keepAwakeCustomMinutes":30}"#.utf8)
+        let settings = try JSONDecoder().decode(MacSettings.self, from: data)
+        #expect(settings.keepAwake)
+        #expect(settings.insomniaMinutes == 60)
+        #expect(settings.keepAwakeCustomMinutes == 30)
+    }
+
+    @Test func insomniaDurationMergesWithoutChangingCaffeinate() throws {
+        let baseline = MacSettings()
+        var shared = GraftSharedState()
+        shared.macSettings.keepAwake = true
+        shared.macSettings.keepAwakeCustomMinutes = 20
+        var proposed = baseline
+        proposed.insomniaMinutes = 45
+        try shared.mergeMacSettings(proposed, baseline: baseline)
+        #expect(shared.macSettings.keepAwake)
+        #expect(shared.macSettings.keepAwakeCustomMinutes == 20)
+        #expect(shared.macSettings.insomniaMinutes == 45)
     }
 }

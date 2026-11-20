@@ -12,13 +12,16 @@ final class GraftStore {
     var extensionID = UserDefaults.standard.string(forKey: "graftExtensionID") ?? ""
     var connectionMessage: String?
 
+    let musicScene = MusicSceneWindows()
     let audio = GraftAudioService()
     var requestedDestination: AppDestination?
 
     let macTweaks = MacTweakService()
     let keepAwake = KeepAwakeService()
+    let closedLid = ClosedLidSessionService()
     let activity: GraftActivityStore
     let codexResets: CodexResetService
+    let dockAIUsage = DockAIUsageService()
     let dmgInstaller: DMGInstallerService
     let notifications: GraftNotificationService
     let robloxPresenceLogs: RobloxPresenceLogStore
@@ -83,11 +86,12 @@ final class GraftStore {
         if let startupError { activity.record(.settings, .failure, "Settings could not load", startupError, retry: .syncSettings) }
         keepAwake.onStopped = { [weak self] message, failed in
             guard let self else { return }
-            self.activity.record(.keepAwake, failed ? .failure : .success, failed ? "Keep Awake failed" : "Keep Awake stopped", message, retry: failed ? .keepAwake : nil)
+            self.activity.record(.keepAwake, failed ? .failure : .success, failed ? "Caffeinate failed" : "Caffeinate ended", message, retry: failed ? .keepAwake : nil)
             self.commit { $0.macSettings.keepAwake = false; $0.macSettings.keepAwakeDeadline = nil }
         }
         keepAwake.apply(loaded.macSettings)
         codexResets.apply(enabled: loaded.macSettings.codexAutoUseResetsEnabled)
+        dockAIUsage.apply(loaded.macSettings)
         dmgInstaller.apply(loaded.macSettings)
         macTweaks.restore(loaded.macSettings)
         notifications.apply(loaded.macSettings)
@@ -201,21 +205,77 @@ final class GraftStore {
         )
     }
 
-    func setMacSettings(_ settings: MacSettings) {
+    func setMacSettings(_ settings: MacSettings, queueOnFailure: Bool = true) {
         let baseline = state.macSettings
         var proposed = settings
-        let sessionChanged = settings.keepAwake != baseline.keepAwake || settings.keepAwakeMode != baseline.keepAwakeMode || settings.keepAwakeAppBundleID != baseline.keepAwakeAppBundleID
+        let sessionChanged = settings.keepAwake != baseline.keepAwake
+            || settings.keepAwakeMode != baseline.keepAwakeMode
+            || settings.keepAwakeCustomMinutes != baseline.keepAwakeCustomMinutes
+            || settings.keepAwakeAppBundleID != baseline.keepAwakeAppBundleID
         if sessionChanged {
-            proposed.keepAwakeDeadline = settings.keepAwake ? settings.keepAwakeMode.duration.map { Date().addingTimeInterval($0) } : nil
-            if settings.keepAwakeMode == .untilAppQuits {
-                let app = NSRunningApplication.runningApplications(withBundleIdentifier: settings.keepAwakeAppBundleID).first { !$0.isTerminated }
-                proposed.keepAwakeAppPID = app?.processIdentifier
-                proposed.keepAwakeAppLaunchDate = app?.launchDate
-            }
+            proposed.keepAwakeDeadline = settings.keepAwake ? settings.keepAwakeDuration.map { Date().addingTimeInterval($0) } : nil
+            let app = settings.keepAwake && settings.keepAwakeMode == .untilAppQuits
+                ? stayAwakeTarget(settings.keepAwakeAppBundleID) : nil
+            proposed.keepAwakeAppPID = app?.processIdentifier
+            proposed.keepAwakeAppLaunchDate = app?.launchDate
         }
-        commit { try $0.mergeMacSettings(proposed, baseline: baseline) }
-        if sessionChanged {
-            activity.record(.keepAwake, .info, keepAwake.isActive ? "Keep Awake started" : "Keep Awake off", keepAwake.detail)
+        commit(queueOnFailure: queueOnFailure) { try $0.mergeMacSettings(proposed, baseline: baseline) }
+        if sessionChanged, !settings.keepAwake || keepAwake.isActive, baseline.keepAwake || settings.keepAwake {
+            activity.record(.keepAwake, .info, keepAwake.isActive ? "Caffeinate started" : "Caffeinate off", keepAwake.detail)
+        }
+    }
+
+    func stayAwakeTarget(_ bundleID: String) -> NSRunningApplication? {
+        guard !bundleID.isEmpty else { return nil }
+        return NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first { !$0.isTerminated }
+    }
+
+    var canExtendStayAwake: Bool {
+        keepAwake.isActive && state.macSettings.keepAwakeDeadline != nil
+    }
+
+    @discardableResult
+    func extendStayAwake(by minutes: Int) -> Bool {
+        let now = Date()
+        guard MacSettings.keepAwakeCustomMinuteRange.contains(minutes), canExtendStayAwake,
+              let deadline = state.macSettings.keepAwakeDeadline, deadline > now else { return false }
+        let extended = deadline.addingTimeInterval(TimeInterval(minutes * 60))
+        commit(queueOnFailure: false) { latest in
+            guard latest.macSettings.keepAwake, latest.macSettings.keepAwakeDeadline == deadline, deadline > Date() else { return }
+            latest.macSettings.keepAwakeDeadline = extended
+        }
+        return state.macSettings.keepAwakeDeadline.map { $0 > deadline } == true
+    }
+
+    func handleStayAwakeCommand(_ command: StayAwakeCommand) -> StayAwakeCommandReply {
+        keepAwake.checkNow()
+        switch command {
+        case .start(let minutes):
+            guard MacSettings.keepAwakeCustomMinuteRange.contains(minutes) else {
+                return .init(success: false, message: "Choose 1 to 240 minutes.")
+            }
+            guard !keepAwake.isActive else { return .init(success: false, message: "Caffeinate is already on. Use extend or end.") }
+            var settings = state.macSettings
+            settings.keepAwake = true
+            settings.keepAwakeMode = .custom
+            settings.keepAwakeCustomMinutes = minutes
+            setMacSettings(settings, queueOnFailure: false)
+            return .init(success: keepAwake.isActive, message: connectionMessage ?? keepAwake.detail)
+        case .extend(let minutes):
+            guard extendStayAwake(by: minutes) else {
+                return .init(success: false, message: "Only a running Caffeinate timer can be extended.")
+            }
+            return .init(success: true, message: keepAwake.detail)
+        case .status:
+            let status = "Caffeinate: \(keepAwake.detail)"
+            return .init(success: true, message: status)
+        case .end:
+            var settings = state.macSettings
+            settings.keepAwake = false
+            setMacSettings(settings, queueOnFailure: false)
+            return keepAwake.isActive
+                ? .init(success: false, message: "Could not save the change. Caffeinate is still on.")
+                : .init(success: true, message: "Caffeinate is off.")
         }
     }
 
@@ -223,6 +283,7 @@ final class GraftStore {
         let settings = state.macSettings
         keepAwake.apply(settings)
         codexResets.apply(enabled: settings.codexAutoUseResetsEnabled)
+        dockAIUsage.apply(settings)
         dmgInstaller.apply(settings)
         macTweaks.apply(settings, previous: previous)
         notifications.apply(settings)
@@ -269,7 +330,7 @@ final class GraftStore {
         await spotifyIntegration.removeBridge()
     }
 
-    private func commit(_ mutation: @escaping (inout GraftSharedState) throws -> Void) {
+    private func commit(queueOnFailure: Bool = true, _ mutation: @escaping (inout GraftSharedState) throws -> Void) {
         let previous = state.macSettings
         do {
             let queued = unsavedMutations
@@ -282,7 +343,7 @@ final class GraftStore {
             applyRuntimeSettings(previous: previous)
         }
         catch {
-            unsavedMutations.append(mutation)
+            if queueOnFailure { unsavedMutations.append(mutation) }
             connectionMessage = "Could not save settings: \(error.localizedDescription)"
             activity.record(.settings, .failure, "Settings could not save", error.localizedDescription, retry: .syncSettings, coalesce: true)
         }

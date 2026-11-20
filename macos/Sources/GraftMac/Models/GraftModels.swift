@@ -95,6 +95,9 @@ enum BrowserTweakCatalog {
             .init("wikipediaSearchHighlightEnabled", "Highlight search terms", default: .bool(false), nested: true),
             .init("wikipediaHideDonationBannersEnabled", "Hide fundraising banners", default: .bool(false), nested: true),
         ]),
+        .init(id: "slopalytics-glass", name: "Slopalytics Glass", category: "Appearance", summary: "Frosted panels for Slopalytics benchmarks and usage", controls: [
+            .init("slopalyticsGlassEnabled", "Enable Slopalytics Glass", default: .bool(false)),
+        ]),
         .init(id: "x-quiet-feed", name: "X Quiet Feed", category: "X", summary: "Hide promotions and recommendation clutter", controls: [
             .init("xQuietFeedEnabled", "Enable X Quiet Feed", default: .bool(false)),
         ]),

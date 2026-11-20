@@ -64,6 +64,7 @@ const TWEAK_REGISTRY = Object.freeze({
       wikipediaFloatingTocEnabled: false,
       wikipediaSearchHighlightEnabled: false,
       wikipediaHideDonationBannersEnabled: false,
+      slopalyticsGlassEnabled: false,
       xQuietFeedEnabled: false,
       robloxPlayerWatcherEnabled: false,
       robloxPlayerWatcherNotifyOnline: true,
@@ -90,6 +91,19 @@ const TWEAK_REGISTRY = Object.freeze({
     },
   }),
   tweaks: [
+    {
+      id: "slopalytics-glass",
+      name: "Slopalytics Glass",
+      description: "Restyle Slopalytics benchmarks and usage with frosted panels and clear controls.",
+      matchPatterns: ["https://slopalytics.com/*", "https://www.slopalytics.com/*"],
+      entrypoints: [
+        { id: "slopalytics-glass-bail", path: "src/lib/extension-bail.js", world: "ISOLATED", runAt: "document_start" },
+        { id: "slopalytics-glass-content", path: "src/tweaks/slopalytics-glass/content.js", world: "ISOLATED", runAt: "document_idle" },
+      ],
+      hostTargets: ["slopalytics.com", "www.slopalytics.com"],
+      optionsKeyPrefix: "slopalyticsGlass",
+      ui: { category: "appearance", popupSection: "Slopalytics Glass", settingsKeys: ["slopalyticsGlassEnabled"] },
+    },
     {
       id: "theme-syncer",
       name: "Theme Syncer",

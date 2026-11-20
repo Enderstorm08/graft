@@ -29,6 +29,7 @@ describe("groupTweaksByCategory", () => {
 
     expect(appearance?.tweaks.map((tweak) => tweak.name)).toEqual([
       "Force Dark Mode",
+      "Slopalytics Glass",
       "Theme Syncer",
     ]);
 
@@ -48,6 +49,7 @@ describe("groupTweaksByCategory", () => {
   it("lists tweak ids in grouped A–Z order", () => {
     expect(listTweakIds()).toEqual([
       "force-dark-mode",
+      "slopalytics-glass",
       "theme-syncer",
       "graft-ai-rewriter",
       "asset-finder",

@@ -10,6 +10,7 @@ export type TweakBadgeState = {
   elementSelector: boolean;
   scrollToTop: boolean;
   wikipediaEnhancements: boolean;
+  slopalyticsGlass: boolean;
   xQuietFeed: boolean;
   robloxPlayerWatcher: boolean;
 };
@@ -24,6 +25,7 @@ const SYNC_KEYS = {
   elementSelectorEnabled: false,
   scrollToTopEnabled: false,
   wikipediaEnhancementsEnabled: false,
+  slopalyticsGlassEnabled: false,
   xQuietFeedEnabled: false,
   robloxPlayerWatcherEnabled: false,
 } as const;
@@ -39,6 +41,7 @@ export function useTweakStatusBadges() {
     elementSelector: false,
     scrollToTop: false,
     wikipediaEnhancements: false,
+    slopalyticsGlass: false,
     xQuietFeed: false,
     robloxPlayerWatcher: false,
   });
@@ -56,6 +59,7 @@ export function useTweakStatusBadges() {
           elementSelector: Boolean(stored.elementSelectorEnabled),
           scrollToTop: Boolean(stored.scrollToTopEnabled),
           wikipediaEnhancements: Boolean(stored.wikipediaEnhancementsEnabled),
+          slopalyticsGlass: Boolean(stored.slopalyticsGlassEnabled),
           xQuietFeed: Boolean(stored.xQuietFeedEnabled),
           robloxPlayerWatcher: Boolean(stored.robloxPlayerWatcherEnabled),
         });
@@ -107,6 +111,7 @@ export function useTweakStatusBadges() {
           "wikipediaEnhancementsEnabled" in changes
             ? Boolean(changes.wikipediaEnhancementsEnabled.newValue)
             : prev.wikipediaEnhancements,
+        slopalyticsGlass: "slopalyticsGlassEnabled" in changes ? Boolean(changes.slopalyticsGlassEnabled.newValue) : prev.slopalyticsGlass,
         xQuietFeed:
           "xQuietFeedEnabled" in changes
             ? Boolean(changes.xQuietFeedEnabled.newValue)

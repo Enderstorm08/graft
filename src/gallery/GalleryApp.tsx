@@ -71,6 +71,7 @@ const GALLERY_TWEAK_BADGES: TweakBadgeState = {
   elementSelector: false,
   scrollToTop: false,
   wikipediaEnhancements: false,
+  slopalyticsGlass: false,
   xQuietFeed: false,
   robloxPlayerWatcher: false,
 };

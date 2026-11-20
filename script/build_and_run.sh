@@ -9,7 +9,11 @@ MIN_SYSTEM_VERSION="15.0"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MACOS_DIR="$ROOT_DIR/macos"
 DIST_DIR="$ROOT_DIR/dist"
-APP_BUNDLE="$DIST_DIR/$APP_NAME.app"
+# Assemble away from cloud-managed folders: Finder can attach metadata between
+# copying a nested resource bundle and signing its parent.
+ASSEMBLY_DIR="$(mktemp -d "${TMPDIR:-/tmp}/graft-assembly.XXXXXX")"
+trap 'rm -rf "$ASSEMBLY_DIR"' EXIT
+APP_BUNDLE="$ASSEMBLY_DIR/$APP_NAME.app"
 APP_CONTENTS="$APP_BUNDLE/Contents"
 APP_MACOS="$APP_CONTENTS/MacOS"
 APP_HELPERS="$APP_CONTENTS/Helpers"
@@ -42,19 +46,31 @@ LINK_ARGS=(-Xlinker -platform_version -Xlinker macos -Xlinker "$DEPLOYMENT_TARGE
 
 BUILD_ARGS=("${LINK_ARGS[@]}")
 if [[ "${GRAFT_SWIFT_DISABLE_SANDBOX:-0}" == "1" ]]; then BUILD_ARGS+=(--disable-sandbox); fi
-swift build --package-path "$MACOS_DIR" "${BUILD_ARGS[@]}"
+# SwiftPM also signs its generated resource bundles. Keep those products out
+# of synced checkouts and isolate the caches of different worktrees.
+if [[ -z "${SWIFTPM_BUILD_DIR:-}" ]]; then
+  WORKSPACE_FINGERPRINT="$(printf %s "$ROOT_DIR" | /usr/bin/shasum -a 256 | cut -c1-16)"
+  export SWIFTPM_BUILD_DIR="$HOME/Library/Caches/com.itsasheruwu.graft.mac/SwiftPM/$WORKSPACE_FINGERPRINT"
+fi
 BIN_DIR="$(swift build --package-path "$MACOS_DIR" "${BUILD_ARGS[@]}" --show-bin-path)"
+# Only remove Finder metadata from final, generated bundle roots.
+clear_bundle_finder_info() {
+  if [[ -d "$1" ]] && /usr/bin/xattr -p com.apple.FinderInfo "$1" >/dev/null 2>&1; then
+    /usr/bin/xattr -d com.apple.FinderInfo "$1"
+  fi
+}
+swift build --package-path "$MACOS_DIR" "${BUILD_ARGS[@]}"
 
-rm -rf "$APP_BUNDLE"
 mkdir -p "$APP_MACOS" "$APP_HELPERS" "$APP_RESOURCES"
 cp -R "$BIN_DIR/GraftMac_GraftBend.bundle" "$APP_RESOURCES/"
+cp -R "$BIN_DIR/GraftMac_GraftMac.bundle" "$APP_RESOURCES/"
 cp "$MACOS_DIR/BENDABLE-LICENSE" "$MACOS_DIR/BENDABLE-NOTICE.md" "$APP_RESOURCES/"
 cp "$BIN_DIR/Graft" "$APP_MACOS/Graft"
 cp "$BIN_DIR/GraftNativeHost" "$APP_HELPERS/GraftNativeHost"
 cp "$ROOT_DIR/src/assets/icons/graft-256.png" "$APP_RESOURCES/graft-256.png"
 cp "$ROOT_DIR/macos/Resources/graft-spotify-bridge.js" "$APP_RESOURCES/graft-spotify-bridge.js"
 mkdir -p "$APP_RESOURCES/Licenses"
-for notice in CODEXBAR-LICENSE CODEXBAR-NOTICE.md LICENSE GRAFT-MIT-LICENSE FINETUNE-LICENSE FINETUNE-NOTICE.md FINETUNE-SOURCE.json BENDABLE-LICENSE BENDABLE-NOTICE.md; do
+for notice in CODEXBAR-LICENSE CODEXBAR-NOTICE.md LICENSE GRAFT-MIT-LICENSE FINETUNE-LICENSE FINETUNE-NOTICE.md FINETUNE-SOURCE.json BENDABLE-LICENSE BENDABLE-NOTICE.md YAMS-LICENSE LIBYAML-LICENSE; do
   cp "$MACOS_DIR/$notice" "$APP_RESOURCES/Licenses/$notice"
 done
 chmod +x "$APP_MACOS/Graft" "$APP_HELPERS/GraftNativeHost"
@@ -70,7 +86,8 @@ cat > "$APP_CONTENTS/Info.plist" <<PLIST
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleIconFile</key><string>graft-256.png</string>
   <key>LSMinimumSystemVersion</key><string>$MIN_SYSTEM_VERSION</string>
-  <key>NSAudioCaptureUsageDescription</key><string>Graft uses system audio access to control application volume, routing, and equalization.</string>
+  <key>NSAppleEventsUsageDescription</key><string>Graft follows the current song and sends playback controls to the music player you connect.</string>
+  <key>NSAudioCaptureUsageDescription</key><string>Graft uses system audio access for application volume, routing, equalization, and music-reactive lighting.</string>
   <key>NSMicrophoneUsageDescription</key><string>Graft needs microphone access only when the selected audio configuration requires an input-capable device.</string>
   <key>NSBluetoothAlwaysUsageDescription</key><string>Graft uses Bluetooth when you browse or connect paired audio devices.</string>
   <key>CFBundleURLTypes</key><array><dict><key>CFBundleURLName</key><string>com.itsasheruwu.graft.audio</string><key>CFBundleURLSchemes</key><array><string>graft</string></array></dict></array>
@@ -98,6 +115,25 @@ else
   /usr/bin/codesign --force --sign - --entitlements "$MACOS_DIR/GraftLocal.entitlements" "$APP_BUNDLE"
 fi
 /usr/bin/codesign --verify --deep --strict "$APP_BUNDLE"
+mkdir -p "$DIST_DIR"
+rm -rf "$DIST_DIR/$APP_NAME.app"
+/usr/bin/ditto --norsrc "$APP_BUNDLE" "$DIST_DIR/$APP_NAME.app"
+APP_BUNDLE="$DIST_DIR/$APP_NAME.app"
+clear_bundle_finder_info "$APP_BUNDLE/Contents/Resources/GraftMac_GraftBend.bundle"
+clear_bundle_finder_info "$APP_BUNDLE/Contents/Resources/GraftMac_GraftMac.bundle"
+clear_bundle_finder_info "$APP_BUNDLE"
+if ! SIGNATURE_ERROR="$(/usr/bin/codesign --verify --deep --strict --verbose=4 "$APP_BUNDLE" 2>&1)"; then
+  # iCloud can reattach FinderInfo as soon as the bundle is accessed. Verify
+  # the actual dist contents on a clean volume, including the nested helper.
+  if [[ "$SIGNATURE_ERROR" != *"Disallowed xattr com.apple.FinderInfo"* ]]; then
+    echo "$SIGNATURE_ERROR" >&2
+    exit 1
+  fi
+  VERIFY_BUNDLE="$ASSEMBLY_DIR/dist-copy/$APP_NAME.app"
+  /usr/bin/ditto --norsrc --noextattr "$APP_BUNDLE" "$VERIFY_BUNDLE"
+  /usr/bin/codesign --verify --deep --strict "$VERIFY_BUNDLE"
+  echo "Verified the exported app after removing cloud-added Finder metadata." >&2
+fi
 
 open_app() {
   # Chrome keeps native hosts alive across app rebuilds. Reconnect them to the

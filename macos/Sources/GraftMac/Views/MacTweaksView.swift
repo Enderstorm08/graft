@@ -16,7 +16,8 @@ struct MacTweaksView: View {
         GraftSettingsPage(intro: "Small, reversible controls for how your Mac behaves.") {
             GraftSettingsGroup("System") {
                 GraftStartupRow()
-                KeepAwakeSettingsRow()
+                CaffeinateSettingsRow()
+                if store.closedLid.isSupported { InsomniaSettingsRow() }
                 GraftToggleRow(
                     title: "Keep Graft above other windows",
                     detail: "Float this app while you tune another app or site",
@@ -27,6 +28,8 @@ struct MacTweaksView: View {
             }
 
             GraftMacAppearanceGroup()
+
+            GraftSettingsGroup("Music") { MusicSceneSettingsRow() }
 
             GraftSettingsGroup(
                 "Finder",
@@ -55,6 +58,7 @@ struct MacTweaksView: View {
             ) {
                 DMGInstallerSettingsRow()
                 CodexResetSettingsRow()
+                DockAIUsageSettingsRow()
                 if store.spotifyIntegration.isSpotifyInstalled {
                     SpotifyWatcherSettingsRow()
                 }

@@ -33,6 +33,7 @@ struct MenuBarView: View {
                         GraftRow { Text(store.audio.status).font(.callout).foregroundStyle(.secondary) }
                     }
                     GraftRow {
+                        Button("Music Scene") { store.musicScene.openPlayer() }
                         Button("Open Audio Settings") { store.requestedDestination = .audio; reveal() }
                         Spacer()
                         if store.audio.isEnabled { Button("Turn Off") { store.audio.setEnabled(false) } }
@@ -50,9 +51,14 @@ struct MenuBarView: View {
                         GraftSettingsGroup("Mac") {
                             GraftToggleRow(title: "Auto-install DMGs", isOn: store.macToggle(\.dmgAutoInstallEnabled))
                             GraftToggleRow(title: "Auto-use Codex resets", isOn: store.macToggle(\.codexAutoUseResetsEnabled))
-                            GraftToggleRow(title: "Keep Mac Awake", isOn: Binding(get: { store.state.macSettings.keepAwake }, set: { value in
-                                var settings = store.state.macSettings; settings.keepAwake = value; store.setMacSettings(settings)
-                            }))
+                            GraftToggleRow(title: "Dock AI Usage", isOn: store.macToggle(\.dockAIUsageEnabled))
+                            GraftToggleRow(
+                                title: "Caffeinate", detail: store.keepAwake.isActive ? store.keepAwake.detail : nil,
+                                isOn: store.macToggle(\.keepAwake)
+                            )
+                            .disabled(!store.keepAwake.isActive && store.state.macSettings.keepAwakeMode == .untilAppQuits
+                                && store.stayAwakeTarget(store.state.macSettings.keepAwakeAppBundleID) == nil)
+                            if store.closedLid.isSupported { InsomniaSettingsRow() }
                         }
                     }.padding(.top, 10)
                 }.padding(.horizontal, 10)
