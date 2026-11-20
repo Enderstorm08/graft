@@ -30,7 +30,7 @@ struct MusicSceneSettingsRow: View {
                         GraftRowLabel(title: "Artwork window", detail: "Opens on a second display when connected")
                         Button("Open Artwork") { scene.openArtwork() }.controlSize(.small)
                     }
-                    GraftToggleRow(title: "Desktop edge light", detail: "Keep light around your display while using other apps",
+                    GraftToggleRow(title: "Desktop edge light", detail: "Light the selected display while music is playing",
                                    isOn: $scene.desktopLight)
                     GraftPickerRow(title: "Display", selection: $scene.displayID) {
                         Text("Main display").tag("")

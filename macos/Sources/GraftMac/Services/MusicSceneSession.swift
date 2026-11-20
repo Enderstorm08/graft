@@ -19,6 +19,7 @@ final class MusicSceneSession {
     private(set) var playerStatus = "Open Spotify or Apple Music and play a song."
     private(set) var meterStatus: String?
     private(set) var isPreview = false
+    var hasLivePlayback: Bool { !isPreview && track?.isPlaying == true }
     var desktopLightEnabled: Bool {
         didSet { defaults.set(desktopLightEnabled, forKey: "musicScene.desktop") }
     }

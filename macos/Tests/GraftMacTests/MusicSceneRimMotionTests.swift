@@ -1,9 +1,26 @@
 import Foundation
+import SwiftUI
 import Testing
 @testable import GraftMac
 
 @MainActor
 struct MusicSceneRimMotionTests {
+    @Test(arguments: [nil, CGRect(x: 610, y: 0, width: 180, height: 30)] as [CGRect?])
+    func desktopRevealSpreadsFromBothSidesOfTheOrigin(_ notch: CGRect?) {
+        let size = CGSize(width: 1440, height: 900)
+        let midX = notch?.midX ?? size.width / 2
+        let y = notch?.maxY ?? 0
+        let outline = MusicSceneRim.perimeter(in: size, notch: notch)
+        let first = MusicSceneRim.revealedStroke(outline, progress: 0.02).boundingRect
+        let second = MusicSceneRim.revealedStroke(outline, progress: 0.03).boundingRect
+
+        #expect(first.minX < midX && first.maxX > midX)
+        #expect(abs(first.midX - midX) < 0.5)
+        #expect(first.minY == y && first.maxY == y)
+        #expect(second.minX < first.minX && second.maxX > first.maxX)
+        #expect(MusicSceneRim.revealedStroke(outline, progress: 1) == outline)
+    }
+
     @Test(arguments: [72.0, 120.0, 176.0])
     func steadyTempoAdvancesOneCycleInSixteenBeats(_ tempo: Double) {
         var motion = MusicSceneRimMotion()

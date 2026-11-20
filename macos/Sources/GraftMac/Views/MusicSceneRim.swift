@@ -15,20 +15,38 @@ extension MusicScenePalette {
     }
 }
 
+struct MusicSceneDesktopRim: View {
+    let session: MusicSceneSession
+    let notch: CGRect?
+
+    var body: some View {
+        Color.clear.overlay {
+            if session.hasLivePlayback, session.lightIntensity > 0 {
+                MusicSceneRim(session: session, notch: notch, revealOnAppear: true)
+            }
+        }
+    }
+}
+
 /// The same optical profile follows the window or the physical bezel, including the camera lip.
 struct MusicSceneRim: View {
     let session: MusicSceneSession
     var notch: CGRect? = nil
+    var revealOnAppear = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var artworkPalette = MusicScenePalette.dusk
+    @State private var appearedAt = ProcessInfo.processInfo.systemUptime
+    @State private var revealFinished = false
+    private static let revealDuration = 1.0
 
     var body: some View {
         let intensity = session.lightIntensity
         let moves = session.animateLight && !reduceMotion
         let reactive = session.reactive && !session.isPreview && !reduceMotion
         let followsBeat = session.beatSync && !session.isPreview && !reduceMotion && session.track?.isPlaying != false
-        let redraws = reactive || followsBeat || moves
+        let revealing = revealOnAppear && !reduceMotion && !revealFinished
+        let redraws = reactive || followsBeat || moves || revealing
         if intensity > 0 {
             TimelineView(.animation(minimumInterval: 1 / 30.0, paused: !redraws)) { _ in
                 let phase = session.rimPhase(moving: moves)
@@ -37,9 +55,13 @@ struct MusicSceneRim: View {
                 let beat = followsBeat ? session.audioBeat : 0
                 let palette = artworkPalette.applying(session.paletteMode)
                 let width = min(16, max(1, session.lightWidth))
+                let elapsed = ProcessInfo.processInfo.systemUptime - appearedAt
+                let fraction = revealing ? min(1, max(0, elapsed / Self.revealDuration)) : 1
+                let progress = fraction * fraction * (3 - 2 * fraction)
                 Canvas { context, size in
                     guard size.width > 1, size.height > 1 else { return }
-                    let outline = perimeter(in: size)
+                    let outline = Self.perimeter(in: size, notch: notch)
+                    let stroke = Self.revealedStroke(outline, progress: progress)
                     let light = shadings(in: size, phase: phase, moving: moves, palette: palette, accent: max(pulse, beat))
                     let breadth = width * (0.96 + 0.25 * level + 0.57 * pulse + 1.04 * beat)
                     context.clip(to: outline)
@@ -47,16 +69,24 @@ struct MusicSceneRim: View {
                         context.drawLayer { layer in
                             layer.addFilter(.blur(radius: blur))
                             layer.opacity = opacity
-                            layer.stroke(outline, with: light.halo, style: StrokeStyle(lineWidth: breadth * scale, lineJoin: .round))
+                            layer.stroke(stroke, with: light.halo,
+                                         style: StrokeStyle(lineWidth: breadth * scale, lineCap: .round, lineJoin: .round))
                         }
                     }
                     bloom(breadth: 6.0, blur: breadth * 1.7, opacity: 0.60 + 0.12 * pulse + 0.19 * beat)
                     bloom(breadth: 2.8, blur: max(0.8, breadth * 0.51), opacity: 0.94)
-                    context.stroke(outline, with: light.core, style: StrokeStyle(lineWidth: max(1, breadth * 1.24), lineJoin: .round))
+                    context.stroke(stroke, with: light.core,
+                                   style: StrokeStyle(lineWidth: max(1, breadth * 1.24), lineCap: .round, lineJoin: .round))
                 }
             }
             .opacity(intensity)
             .onChange(of: session.artwork, initial: true) { _, image in artworkPalette = .from(image) }
+            .task {
+                guard revealOnAppear else { return }
+                try? await Task.sleep(for: .seconds(Self.revealDuration))
+                guard !Task.isCancelled else { return }
+                revealFinished = true
+            }
             .accessibilityHidden(true)
             .allowsHitTesting(false)
         }
@@ -110,25 +140,41 @@ struct MusicSceneRim: View {
         return (.conicGradient(Gradient(stops: core), center: center), .conicGradient(Gradient(stops: halo), center: center))
     }
 
-    private func perimeter(in size: CGSize) -> Path {
-        let bounds = CGRect(origin: .zero, size: size)
-        guard let notch, notch.width > 8, notch.maxY > 3,
-              notch.minX > 8, notch.maxX < size.width - 8 else { return Path(bounds) }
-        let lip = min(9, notch.maxY * 0.38, notch.width * 0.18)
-        let shoulder = min(4, lip * 0.65)
+    static func revealedStroke(_ outline: Path, progress: Double) -> Path {
+        if progress >= 1 { return outline }
+        let reach = progress / 2
+        var stroke = outline.trimmedPath(from: 0, to: reach)
+        stroke.addPath(outline.trimmedPath(from: 1 - reach, to: 1))
+        return stroke
+    }
+
+    // Begin at the top center or the middle of the notch lip, so trimming
+    // from both ends sends the light in opposite directions from that point.
+    static func perimeter(in size: CGSize, notch: CGRect?) -> Path {
+        let notch = notch.flatMap { notch in
+            notch.width > 8 && notch.maxY > 3 && notch.minX > 8 && notch.maxX < size.width - 8 ? notch : nil
+        }
+        let origin = CGPoint(x: notch?.midX ?? size.width / 2, y: notch?.maxY ?? 0)
         var path = Path()
-        path.move(to: .zero)
-        path.addLine(to: CGPoint(x: notch.minX - shoulder, y: 0))
-        path.addQuadCurve(to: CGPoint(x: notch.minX, y: shoulder), control: CGPoint(x: notch.minX, y: 0))
-        path.addLine(to: CGPoint(x: notch.minX, y: notch.maxY - lip))
-        path.addQuadCurve(to: CGPoint(x: notch.minX + lip, y: notch.maxY), control: CGPoint(x: notch.minX, y: notch.maxY))
-        path.addLine(to: CGPoint(x: notch.maxX - lip, y: notch.maxY))
-        path.addQuadCurve(to: CGPoint(x: notch.maxX, y: notch.maxY - lip), control: CGPoint(x: notch.maxX, y: notch.maxY))
-        path.addLine(to: CGPoint(x: notch.maxX, y: shoulder))
-        path.addQuadCurve(to: CGPoint(x: notch.maxX + shoulder, y: 0), control: CGPoint(x: notch.maxX, y: 0))
-        path.addLine(to: CGPoint(x: bounds.maxX, y: 0))
-        path.addLine(to: CGPoint(x: bounds.maxX, y: bounds.maxY))
-        path.addLine(to: CGPoint(x: 0, y: bounds.maxY))
+        path.move(to: origin)
+        let lip = notch.map { min(9, $0.maxY * 0.38, $0.width * 0.18) } ?? 0
+        let shoulder = min(4, lip * 0.65)
+        if let notch {
+            path.addLine(to: CGPoint(x: notch.maxX - lip, y: notch.maxY))
+            path.addQuadCurve(to: CGPoint(x: notch.maxX, y: notch.maxY - lip), control: CGPoint(x: notch.maxX, y: notch.maxY))
+            path.addLine(to: CGPoint(x: notch.maxX, y: shoulder))
+            path.addQuadCurve(to: CGPoint(x: notch.maxX + shoulder, y: 0), control: CGPoint(x: notch.maxX, y: 0))
+        }
+        path.addLine(to: CGPoint(x: size.width, y: 0))
+        path.addLine(to: CGPoint(x: size.width, y: size.height))
+        path.addLine(to: CGPoint(x: 0, y: size.height))
+        path.addLine(to: .zero)
+        if let notch {
+            path.addLine(to: CGPoint(x: notch.minX - shoulder, y: 0))
+            path.addQuadCurve(to: CGPoint(x: notch.minX, y: shoulder), control: CGPoint(x: notch.minX, y: 0))
+            path.addLine(to: CGPoint(x: notch.minX, y: notch.maxY - lip))
+            path.addQuadCurve(to: CGPoint(x: notch.minX + lip, y: notch.maxY), control: CGPoint(x: notch.minX, y: notch.maxY))
+        }
         path.closeSubpath()
         return path
     }

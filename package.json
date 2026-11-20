@@ -1,6 +1,6 @@
 {
   "name": "graft",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A focused kit for grafting small fixes onto the web.",
   "private": true,
   "type": "module",

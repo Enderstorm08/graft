@@ -160,8 +160,11 @@ final class MusicSceneWindows: NSObject, NSWindowDelegate {
                     notch = CGRect(x: left.maxX - screen.frame.minX, y: 0, width: right.minX - left.maxX,
                                    height: screen.safeAreaInsets.top)
                 }
-                panel.contentView = NSHostingView(rootView: MusicSceneRim(session: session, notch: notch)
+                let hostingView = NSHostingView(rootView: MusicSceneDesktopRim(session: session, notch: notch)
                     .ignoresSafeArea().accessibilityHidden(true))
+                // The display frame owns the panel size, including while the light is off.
+                hostingView.sizingOptions = []
+                panel.contentView = hostingView
                 // Borderless windows otherwise get constrained below the menu bar.
                 panel.setFrame(screen.frame, display: false)
                 panel.orderFrontRegardless()

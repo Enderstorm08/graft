@@ -11,6 +11,28 @@ struct MusicSceneSessionTests {
         try body(MusicSceneSession(defaults: defaults), defaults)
     }
 
+    @Test func desktopLightRequiresLivePlayback() throws {
+        try withSession { session, _ in
+            func track(playing: Bool) -> MusicSceneTrack {
+                MusicSceneTrack(id: "live-track", source: .spotify, title: "Song", artist: "Artist",
+                                album: "Album", duration: 60, position: 10, isPlaying: playing,
+                                sampledAt: .now, artworkURL: nil, artworkData: nil)
+            }
+            #expect(!session.hasLivePlayback)
+            session.apply(track(playing: true))
+            #expect(session.hasLivePlayback)
+            session.apply(track(playing: false))
+            #expect(!session.hasLivePlayback)
+            session.apply(track(playing: true))
+            #expect(session.hasLivePlayback)
+            session.apply(nil)
+            #expect(!session.hasLivePlayback)
+            session.startPreview()
+            #expect(session.track?.isPlaying == true)
+            #expect(!session.hasLivePlayback)
+        }
+    }
+
     @Test func previewClockSeeksPausesAndLoopsWithoutAPlayer() throws {
         try withSession { session, _ in
             session.startPreview()
